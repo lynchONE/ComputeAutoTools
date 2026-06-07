@@ -1,0 +1,458 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#070b12" />
+    <title>Compute · 算力终端</title>
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23070b12'/%3E%3Cpath d='M7 22 L14 9 L18 18 L21 13 L25 22' fill='none' stroke='%23ff9d3d' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"
+    />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="app">
+      <aside class="sidenav">
+        <div class="brand">
+          <span class="brand-mark" aria-hidden="true">
+            <svg viewBox="0 0 32 32" width="26" height="26">
+              <path d="M5 23 L13 8 L17 19 L20 13 L27 23" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+          </span>
+          <span class="brand-text">
+            <strong>Compute</strong>
+            <em>算力终端</em>
+          </span>
+        </div>
+
+        <nav class="nav-list" aria-label="功能区">
+          <button class="nav-item active" type="button" data-tab-target="scan">
+            <span class="nav-no">01</span>
+            <span class="nav-ico" aria-hidden="true">
+              <svg viewBox="0 0 24 24" width="18" height="18"><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="12" cy="12" r="3.4" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M12 3.5 V7 M12 17 V20.5 M3.5 12 H7 M17 12 H20.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+            </span>
+            <span class="nav-label">扫描筛选<em>SCAN</em></span>
+          </button>
+          <button class="nav-item" type="button" data-tab-target="connect">
+            <span class="nav-no">02</span>
+            <span class="nav-ico" aria-hidden="true">
+              <svg viewBox="0 0 24 24" width="18" height="18"><path d="M9 15 L15 9 M8 8 a3.5 3.5 0 0 1 5 0 l1 1 a3.5 3.5 0 0 1 0 5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M16 16 a3.5 3.5 0 0 1-5 0 l-1-1 a3.5 3.5 0 0 1 0-5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+            </span>
+            <span class="nav-label">连接通知<em>CONNECT</em></span>
+          </button>
+          <button class="nav-item" type="button" data-tab-target="activity">
+            <span class="nav-no">03</span>
+            <span class="nav-ico" aria-hidden="true">
+              <svg viewBox="0 0 24 24" width="18" height="18"><path d="M3 12 H7 L9.5 5 L14 19 L16.5 12 H21" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </span>
+            <span class="nav-label">运行中任务<em>TASKS</em></span>
+          </button>
+          <button class="nav-item" type="button" data-tab-target="instances">
+            <span class="nav-no">04</span>
+            <span class="nav-ico" aria-hidden="true">
+              <svg viewBox="0 0 24 24" width="18" height="18"><rect x="4" y="4.5" width="16" height="6" rx="1.4" fill="none" stroke="currentColor" stroke-width="1.6"/><rect x="4" y="13.5" width="16" height="6" rx="1.4" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="7.5" cy="7.5" r="1" fill="currentColor"/><circle cx="7.5" cy="16.5" r="1" fill="currentColor"/></svg>
+            </span>
+            <span class="nav-label">账号实例<em>INSTANCES</em></span>
+          </button>
+        </nav>
+
+        <div class="nav-foot">
+          <div class="run-indicator">
+            <span id="runBadge" class="badge">未运行</span>
+            <span id="scanBadge" class="badge muted">空闲</span>
+          </div>
+          <p class="nav-meta">报价扫描 / 自动租用</p>
+        </div>
+      </aside>
+
+      <div class="main">
+        <header class="topbar">
+          <div class="topbar-status" aria-live="polite">
+            <span id="clock" class="clock">--:--:--</span>
+            <span class="sep" aria-hidden="true"></span>
+            <span id="lastScanText" class="last-scan">未扫描</span>
+          </div>
+          <div class="toolbar" aria-label="全局配置">
+            <label class="language-picker" aria-label="语言">
+              <span>语言</span>
+              <select id="languageSelect">
+                <option value="zh">中文</option>
+                <option value="en">English</option>
+              </select>
+            </label>
+          </div>
+        </header>
+
+        <div class="content">
+          <form id="configForm" autocomplete="off">
+            <input name="ui.language" type="hidden" />
+            <section class="tab-panel active" data-tab-panel="scan">
+              <div class="scan-layout">
+                <div class="scan-main">
+                  <div class="card scan-action-card">
+                    <div class="panel-heading compact">
+                      <div>
+                        <h2>扫描监控</h2>
+                        <p>保存配置后，可以手动扫描或启动自动监控</p>
+                      </div>
+                      <div class="button-row">
+                        <button class="btn primary page-save-btn" type="button">保存</button>
+                        <button id="scanBtn" class="btn btn-ghost" type="button">手动扫描</button>
+                        <button id="startBtn" class="btn btn-go" type="button">启动监控</button>
+                        <button id="stopBtn" class="btn btn-stop" type="button">停止监控</button>
+                      </div>
+                    </div>
+                    <div class="grid four">
+                      <label>
+                        <span class="field-tag">平台</span>
+                        <select name="platform.provider">
+                          <option value="vast">Vast.ai</option>
+                          <option value="runpod">RunPod</option>
+                        </select>
+                      </label>
+                    </div>
+                  </div>
+
+                  <div class="card">
+                    <div class="panel-heading">
+                      <div>
+                        <h2>GPU 型号</h2>
+                        <p id="gpuSourceText">GPU 型号加载中</p>
+                      </div>
+                      <label class="search-box">
+                        <span class="field-tag">搜索型号</span>
+                        <input id="gpuSearchInput" placeholder="RTX 4090 / H100 / A100" spellcheck="false" />
+                      </label>
+                    </div>
+
+                    <div class="gpu-picker" data-field="search.gpu_names">
+                      <div id="selectedGpuList" class="chip-row selected-chip-row"></div>
+                      <div id="gpuCategoryTabs" class="gpu-category-tabs" aria-label="GPU 型号分类"></div>
+                      <div id="gpuModelList" class="gpu-model-list" aria-label="GPU 型号列表"></div>
+                    </div>
+                  </div>
+
+                  <div class="card">
+                    <div class="card-title">
+                      <h2>扫描条件</h2>
+                      <span class="card-kicker">FILTER</span>
+                    </div>
+                    <div class="grid four">
+                      <label>
+                        <span class="field-tag">最少 GPU 数</span>
+                        <input name="search.min_gpu_count" type="number" min="1" step="1" />
+                      </label>
+                      <label>
+                        <span class="field-tag">最多 GPU 数</span>
+                        <input name="search.max_gpu_count" type="number" min="1" step="1" data-nullable="true" />
+                      </label>
+                      <label>
+                        <span class="field-tag">最高 $/小时</span>
+                        <input name="search.max_price_per_hour" type="number" min="0" step="0.001" data-nullable="true" />
+                      </label>
+                      <label>
+                        <span class="field-tag">最低显存 GB</span>
+                        <input name="search.min_gpu_ram_gb" type="number" min="0" step="1" data-nullable="true" />
+                      </label>
+                      <label>
+                        <span class="field-tag">最低总 TFLOPS</span>
+                        <input name="search.min_total_flops" type="number" min="0" step="0.1" data-nullable="true" />
+                      </label>
+                      <label>
+                        <span class="field-tag">最低 TFLOPS/USD</span>
+                        <input name="search.min_flops_per_usd" type="number" min="0" step="0.1" data-nullable="true" />
+                      </label>
+                      <label>
+                        <span class="field-tag">最低可靠性</span>
+                        <input name="search.min_reliability" type="number" min="0" max="1" step="0.001" data-nullable="true" />
+                      </label>
+                      <label>
+                        <span class="field-tag">搜索上限</span>
+                        <input name="search.search_limit" type="number" min="1" max="500" step="1" />
+                      </label>
+                      <label>
+                        <span class="field-tag">报价类型</span>
+                        <select name="search.offer_type">
+                          <option value="on-demand">on-demand</option>
+                          <option value="bid">bid</option>
+                          <option value="reserved">reserved</option>
+                        </select>
+                      </label>
+                      <label>
+                        <span class="field-tag">排序</span>
+                        <select name="search.order_by">
+                          <option value="flops_per_usd">TFLOPS/USD</option>
+                          <option value="dlperf_per_usd">DLPerf/USD</option>
+                          <option value="price">价格最低</option>
+                          <option value="total_flops">总 TFLOPS</option>
+                          <option value="reliability">可靠性</option>
+                          <option value="score">Vast Score</option>
+                        </select>
+                      </label>
+                      <label>
+                        <span class="field-tag">计价磁盘 GB</span>
+                        <input name="search.pricing_storage_gb" type="number" min="1" step="1" />
+                      </label>
+                      <label>
+                        <span class="field-tag">Datacenter</span>
+                        <select name="search.require_datacenter" data-nullable-bool="true">
+                          <option value="">不限</option>
+                          <option value="true">必须是</option>
+                          <option value="false">必须不是</option>
+                        </select>
+                      </label>
+                      <label>
+                        <span class="field-tag">Static IP</span>
+                        <select name="search.require_static_ip" data-nullable-bool="true">
+                          <option value="">不限</option>
+                          <option value="true">必须是</option>
+                          <option value="false">必须不是</option>
+                        </select>
+                      </label>
+                    </div>
+                    <div class="toggles">
+                      <label class="switch"><input name="search.require_verified" type="checkbox" /><span class="switch-track"></span> 只要 verified</label>
+                      <label class="switch"><input name="search.allow_external" type="checkbox" /><span class="switch-track"></span> 允许 external</label>
+                    </div>
+                  </div>
+
+                  <div class="card auto-create-section">
+                    <div class="section-row">
+                      <div>
+                        <h2>自动创建配置</h2>
+                        <p id="selectedOfferText">未指定候选机器时，会按排序从上往下自动创建</p>
+                      </div>
+                      <div class="toggles inline">
+                        <label class="switch"><input name="create.auto_create_enabled" type="checkbox" /><span class="switch-track"></span> 命中后自动创建</label>
+                        <label class="switch"><input name="create.cancel_unavailable" type="checkbox" /><span class="switch-track"></span> 不可用时取消</label>
+                        <label class="switch"><input name="create.jupyter_lab" type="checkbox" /><span class="switch-track"></span> Jupyter Lab</label>
+                      </div>
+                    </div>
+                    <div class="grid four">
+                      <label class="wide">
+                        <span class="field-tag">Template 搜索</span>
+                        <input id="templateSearchInput" placeholder="pytorch / cuda / jupyter" spellcheck="false" />
+                      </label>
+                      <div class="template-actions">
+                        <button id="templateSearchBtn" class="btn btn-ghost" type="button">搜索模板</button>
+                        <button id="templatePopularBtn" class="btn btn-ghost" type="button">推荐模板</button>
+                      </div>
+                      <div id="templateList" class="template-list full" aria-label="Vast 模板列表"></div>
+                      <label class="wide">
+                        <span class="field-tag">Docker Image</span>
+                        <input name="create.image" spellcheck="false" />
+                      </label>
+                      <label>
+                        <span class="field-tag">磁盘 GB</span>
+                        <input name="create.disk_gb" type="number" min="1" step="1" />
+                      </label>
+                      <label>
+                        <span class="field-tag">标签前缀</span>
+                        <input name="create.label_prefix" />
+                      </label>
+                      <label>
+                        <span class="field-tag">最多创建数量</span>
+                        <input name="create.max_created_instances" type="number" min="1" step="1" />
+                      </label>
+                      <label>
+                        <span class="field-tag">每轮最多创建</span>
+                        <input name="create.max_creates_per_cycle" type="number" min="1" step="1" />
+                      </label>
+                      <label>
+                        <span class="field-tag">运行类型</span>
+                        <select name="create.runtype">
+                          <option value="ssh">ssh</option>
+                          <option value="jupyter">jupyter</option>
+                          <option value="args">args</option>
+                        </select>
+                      </label>
+                      <label>
+                        <span class="field-tag">Template Hash</span>
+                        <input name="create.template_hash" placeholder="可留空" />
+                      </label>
+                      <label>
+                        <span class="field-tag">Args</span>
+                        <input name="create.args" placeholder="可留空" />
+                      </label>
+                      <label class="wide">
+                        <span class="field-tag">Docker Extra</span>
+                        <input name="create.docker_extra" placeholder="如 -p 7860:7860" />
+                      </label>
+                      <label class="full">
+                        <span class="field-tag">Onstart</span>
+                        <textarea name="create.onstart_cmd" rows="3" spellcheck="false"></textarea>
+                      </label>
+                      <label class="full">
+                        <span class="field-tag">Env JSON</span>
+                        <textarea name="create.env_vars" rows="3" spellcheck="false" placeholder='{"HF_TOKEN":"..."}'></textarea>
+                      </label>
+                    </div>
+                  </div>
+
+                  <section id="resultsSection" class="card results-panel embedded">
+                    <div class="panel-heading compact">
+                      <div>
+                        <h2>扫描结果</h2>
+                        <p>手动扫描或定时扫描后，候选机器会直接显示在这里</p>
+                      </div>
+                      <div id="offerGpuFilters" class="offer-filter-tabs" aria-label="GPU 数量筛选"></div>
+                    </div>
+                    <div id="offersList" class="offer-list"></div>
+                  </section>
+                </div>
+
+                <aside class="scan-side" aria-label="运行日志">
+                  <div class="side-heading">
+                    <h2>运行日志</h2>
+                    <span id="sideRunText">等待监控</span>
+                  </div>
+                  <div id="sideEventList" class="side-event-list"></div>
+                </aside>
+              </div>
+            </section>
+
+            <section class="tab-panel" data-tab-panel="connect">
+              <div class="card">
+                <div class="panel-heading">
+                  <div>
+                    <h2>连接测试与通知</h2>
+                    <p>实例创建后会使用下方私钥真实 SSH 登录并执行命令；未填写私钥时不会自动创建</p>
+                  </div>
+                </div>
+
+                <div class="card-title">
+                  <h2>账号与 Bark</h2>
+                  <span class="card-kicker">CREDENTIALS</span>
+                </div>
+                <div class="grid two">
+                  <label>
+                    <span class="field-tag">Vast API Key</span>
+                    <input name="credentials.vast_api_key" type="password" spellcheck="false" />
+                  </label>
+                  <label>
+                    <span class="field-tag">RunPod API Key</span>
+                    <input name="credentials.runpod_api_key" type="password" spellcheck="false" />
+                  </label>
+                  <label>
+                    <span class="field-tag">Bark URL</span>
+                    <input name="credentials.bark_url" placeholder="https://api.day.app/KEY" spellcheck="false" />
+                  </label>
+                  <label>
+                    <span class="field-tag">Bark Group</span>
+                    <input name="credentials.bark_group" />
+                  </label>
+                  <label>
+                    <span class="field-tag">Bark Sound</span>
+                    <input name="credentials.bark_sound" placeholder="可留空" />
+                  </label>
+                </div>
+
+                <div class="card-title spaced">
+                  <h2>SSH 与调度</h2>
+                  <span class="card-kicker">CONNECTION</span>
+                </div>
+                <div class="grid four">
+                  <label>
+                    <span class="field-tag">测试模式</span>
+                    <select name="connection.ssh_test_mode">
+                      <option value="ssh">SSH 登录命令</option>
+                    </select>
+                  </label>
+                  <label>
+                    <span class="field-tag">SSH 用户</span>
+                    <input name="connection.ssh_user" />
+                  </label>
+                  <label>
+                    <span class="field-tag">私钥路径</span>
+                    <input name="connection.ssh_private_key_path" placeholder="可选，如 C:\\Users\\Administrator\\.ssh\\id_ed25519" />
+                  </label>
+                  <label>
+                    <span class="field-tag">SSH 命令</span>
+                    <input name="connection.ssh_command" />
+                  </label>
+                  <label class="full">
+                    <span class="field-tag">私钥内容</span>
+                    <textarea name="connection.ssh_private_key" rows="6" spellcheck="false" placeholder="-----BEGIN OPENSSH PRIVATE KEY-----"></textarea>
+                  </label>
+                  <label>
+                    <span class="field-tag">等待超时 秒</span>
+                    <input name="connection.wait_timeout_seconds" type="number" min="30" step="30" />
+                  </label>
+                  <label>
+                    <span class="field-tag">轮询间隔 秒</span>
+                    <input name="connection.poll_interval_seconds" type="number" min="2" step="1" />
+                  </label>
+                  <label>
+                    <span class="field-tag">连接超时 秒</span>
+                    <input name="connection.connect_timeout_seconds" type="number" min="1" step="1" />
+                  </label>
+                  <label>
+                    <span class="field-tag">扫描间隔 秒</span>
+                    <input name="monitor.scan_interval_seconds" type="number" min="15" step="5" />
+                  </label>
+                </div>
+                <div class="toggles">
+                  <label class="switch"><input name="monitor.notify_on_error" type="checkbox" /><span class="switch-track"></span> 错误时 Bark 通知</label>
+                </div>
+                <div class="button-row connect-actions">
+                  <button class="btn primary page-save-btn" type="button">保存</button>
+                  <button id="barkBtn" class="btn btn-ghost" type="button">测试 Bark</button>
+                </div>
+              </div>
+            </section>
+          </form>
+
+          <section class="tab-panel" data-tab-panel="activity">
+            <div class="card">
+              <div class="panel-heading">
+                <div>
+                  <h2>运行中任务</h2>
+                  <p>查看、创建、修改、启动和删除监控任务</p>
+                </div>
+                <div class="button-row">
+                  <button id="refreshTasksBtn" class="btn btn-ghost" type="button">刷新任务</button>
+                </div>
+              </div>
+              <div class="task-control-grid">
+                <label class="wide">
+                  <span class="field-tag">任务名称</span>
+                  <input id="taskNameInput" placeholder="如 H100 自动创建" />
+                </label>
+                <div class="task-actions">
+                  <button id="createTaskBtn" class="btn primary" type="button">新建任务</button>
+                  <button id="updateTaskBtn" class="btn btn-ghost" type="button">更新任务</button>
+                  <button id="startTaskBtn" class="btn btn-go" type="button">启动任务</button>
+                  <button id="stopTaskBtn" class="btn btn-stop" type="button">停止任务</button>
+                  <button id="deleteTaskBtn" class="btn btn-stop" type="button">删除任务</button>
+                </div>
+              </div>
+              <div id="activeTaskPanel" class="task-summary-panel"></div>
+              <div id="taskList" class="task-list"></div>
+            </div>
+          </section>
+
+          <section class="tab-panel" data-tab-panel="instances">
+            <div class="card">
+              <div class="panel-heading">
+                <div>
+                  <h2>账号实例</h2>
+                  <p>读取当前账号已有实例</p>
+                </div>
+                <div class="button-row">
+                  <button id="cleanupInstancesBtn" class="btn btn-ghost" type="button">清理错误实例</button>
+                  <button id="deleteInstancesBtn" class="btn btn-stop" type="button">删除选中</button>
+                  <button id="refreshInstancesBtn" class="btn btn-ghost" type="button">刷新实例</button>
+                </div>
+              </div>
+              <div id="instancesList" class="instance-list"></div>
+            </div>
+          </section>
+        </div>
+      </div>
+    </div>
+
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+    <script src="/app.js"></script>
+  </body>
+</html>
