@@ -217,6 +217,40 @@
                     </div>
                   </div>
 
+                  <div class="card stock-alert-section">
+                    <div class="section-row">
+                      <div>
+                        <h2>库存下降告警</h2>
+                        <p>按当前扫描条件统计可租机器数量</p>
+                      </div>
+                      <div class="toggles inline">
+                        <label class="switch"><input name="monitor.stock_alert_enabled" type="checkbox" /><span class="switch-track"></span> 启用库存告警</label>
+                      </div>
+                    </div>
+                    <div class="grid five">
+                      <label>
+                        <span class="field-tag">告警窗口 分钟</span>
+                        <input name="monitor.stock_alert_window_minutes" type="number" min="1" step="1" />
+                      </label>
+                      <label>
+                        <span class="field-tag">最少基线数量</span>
+                        <input name="monitor.stock_alert_min_baseline_count" type="number" min="1" step="1" />
+                      </label>
+                      <label>
+                        <span class="field-tag">减少台数阈值</span>
+                        <input name="monitor.stock_alert_drop_count" type="number" min="1" step="1" />
+                      </label>
+                      <label>
+                        <span class="field-tag">减少百分比</span>
+                        <input name="monitor.stock_alert_drop_percent" type="number" min="0" max="100" step="0.1" />
+                      </label>
+                      <label>
+                        <span class="field-tag">冷却 分钟</span>
+                        <input name="monitor.stock_alert_cooldown_minutes" type="number" min="1" step="1" />
+                      </label>
+                    </div>
+                  </div>
+
                   <div class="card auto-create-section">
                     <div class="section-row">
                       <div>
@@ -227,8 +261,10 @@
                         <label class="switch"><input name="create.auto_create_enabled" type="checkbox" /><span class="switch-track"></span> 命中后自动创建</label>
                         <label class="switch"><input name="create.cancel_unavailable" type="checkbox" /><span class="switch-track"></span> 不可用时取消</label>
                         <label class="switch"><input name="create.jupyter_lab" type="checkbox" /><span class="switch-track"></span> Jupyter Lab</label>
+                        <label class="switch risk-switch"><input name="create.allow_create_without_ssh_key" type="checkbox" /><span class="switch-track"></span> 允许无 SSH 创建</label>
                       </div>
                     </div>
+                    <p class="risk-note">未配置 SSH 时默认不会自动创建。打开无 SSH 创建后，如果机器无法正常启动或无法连接，平台可能已经开始计费，风险由用户承担。</p>
                     <div class="grid four">
                       <label class="wide">
                         <span class="field-tag">Template 搜索</span>
@@ -304,8 +340,11 @@
 
                 <aside class="scan-side" aria-label="运行日志">
                   <div class="side-heading">
-                    <h2>运行日志</h2>
-                    <span id="sideRunText">等待监控</span>
+                    <div>
+                      <h2>运行日志</h2>
+                      <span id="sideRunText">等待监控</span>
+                    </div>
+                    <button id="clearEventsBtn" class="btn btn-ghost btn-mini" type="button">清空</button>
                   </div>
                   <div id="sideEventList" class="side-event-list"></div>
                 </aside>
@@ -317,7 +356,7 @@
                 <div class="panel-heading">
                   <div>
                     <h2>连接测试与通知</h2>
-                    <p>实例创建后会使用下方私钥真实 SSH 登录并执行命令；未填写私钥时不会自动创建</p>
+                    <p>实例创建后会使用下方私钥真实 SSH 登录并执行命令；未填写私钥时默认不会自动创建，除非在自动创建配置中允许无 SSH 创建并自行承担计费风险。</p>
                   </div>
                 </div>
 

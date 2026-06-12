@@ -76,6 +76,9 @@ class RequestHandler(BaseHTTPRequestHandler):
             elif parsed.path == "/api/monitor/stop":
                 self.context.monitor.stop()
                 self._send_json({"running": False})
+            elif parsed.path == "/api/events/clear":
+                self.context.state.clear_events()
+                self._send_json({"ok": True})
             elif parsed.path == "/api/query-preview":
                 body = self._read_json()
                 config = config_from_dict(body)

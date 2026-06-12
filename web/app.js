@@ -38,6 +38,7 @@ const buttons = {
   deleteInstances: document.querySelector("#deleteInstancesBtn"),
   templateSearch: document.querySelector("#templateSearchBtn"),
   templatePopular: document.querySelector("#templatePopularBtn"),
+  clearEvents: document.querySelector("#clearEventsBtn"),
 };
 
 let currentConfig = null;
@@ -127,6 +128,7 @@ const i18n = {
     sshChecking: "SSH 检测中",
     connectionPassed: "连接通过",
     connectionChecking: "连接检测中",
+    unverifiedKept: "未验证保留",
     kept: "保留",
     checking: "检测中",
     noEvents: "暂无运行事件",
@@ -162,6 +164,7 @@ const i18n = {
     taskStarted: "任务已启动",
     taskStopped: "任务已停止",
     taskDeleted: "任务已删除",
+    eventsCleared: "日志已清空",
     noTasks: "还没有监控任务",
     noActiveTask: "当前没有运行中的监控任务",
     selectTaskFirst: "请先选择任务",
@@ -178,6 +181,7 @@ const i18n = {
     taskLastScan: "上次扫描",
     taskNextScan: "下次扫描",
     taskAutoCreate: "自动创建",
+    taskStockAlert: "库存告警",
     enabled: "开启",
     disabled: "关闭",
     eventInfo: "信息",
@@ -237,6 +241,7 @@ const i18n = {
     sshChecking: "Checking SSH",
     connectionPassed: "Connection passed",
     connectionChecking: "Checking connection",
+    unverifiedKept: "Kept unverified",
     kept: "Kept",
     checking: "Checking",
     noEvents: "No runtime events",
@@ -272,6 +277,7 @@ const i18n = {
     taskStarted: "Task started",
     taskStopped: "Task stopped",
     taskDeleted: "Task deleted",
+    eventsCleared: "Logs cleared",
     noTasks: "No monitor tasks yet",
     noActiveTask: "No monitor task is running",
     selectTaskFirst: "Select a task first",
@@ -288,6 +294,7 @@ const i18n = {
     taskLastScan: "Last Scan",
     taskNextScan: "Next Scan",
     taskAutoCreate: "Auto Create",
+    taskStockAlert: "Stock Alert",
     enabled: "Enabled",
     disabled: "Disabled",
     eventInfo: "info",
@@ -339,10 +346,23 @@ const staticTextPairs = [
   ["必须不是", "Must Not Be"],
   ["只要 verified", "Verified only"],
   ["允许 external", "Allow external"],
+  ["库存下降告警", "Stock Drop Alert"],
+  ["按当前扫描条件统计可租机器数量", "Count rentable machines using current scan filters"],
+  ["启用库存告警", "Enable stock alerts"],
+  ["告警窗口 分钟", "Alert Window Min"],
+  ["最少基线数量", "Min Baseline"],
+  ["减少台数阈值", "Drop Count"],
+  ["减少百分比", "Drop Percent"],
+  ["冷却 分钟", "Cooldown Min"],
   ["自动创建配置", "Auto-Create Config"],
   ["未指定候选机器时，会按排序从上往下自动创建", "When no candidate is selected, auto-create uses the sorted order from top to bottom"],
   ["命中后自动创建", "Auto-create matches"],
   ["不可用时取消", "Cancel unavailable"],
+  ["允许无 SSH 创建", "Allow no-SSH create"],
+  [
+    "未配置 SSH 时默认不会自动创建。打开无 SSH 创建后，如果机器无法正常启动或无法连接，平台可能已经开始计费，风险由用户承担。",
+    "Auto-create is blocked by default when SSH is not configured. If no-SSH create is enabled and the machine cannot start or connect, the platform may already charge you and you accept that risk.",
+  ],
   ["Template 搜索", "Template Search"],
   ["搜索模板", "Search Templates"],
   ["推荐模板", "Popular Templates"],
@@ -356,9 +376,13 @@ const staticTextPairs = [
   ["扫描结果", "Scan Results"],
   ["手动扫描或定时扫描后，候选机器会直接显示在这里", "Candidate machines appear here after manual or scheduled scans"],
   ["运行日志", "Runtime Logs"],
+  ["清空", "Clear"],
   ["等待监控", "Waiting"],
   ["连接测试与通知", "Connection Test and Notifications"],
-  ["实例创建后会使用下方私钥真实 SSH 登录并执行命令；未填写私钥时不会自动创建", "After an instance is created, the private key below is used for a real SSH login and command execution; auto-create is blocked without a key"],
+  [
+    "实例创建后会使用下方私钥真实 SSH 登录并执行命令；未填写私钥时默认不会自动创建，除非在自动创建配置中允许无 SSH 创建并自行承担计费风险。",
+    "After an instance is created, the private key below is used for a real SSH login and command execution; without a key, auto-create is blocked by default unless no-SSH create is enabled and billing risk is accepted.",
+  ],
   ["账号与 Bark", "Account and Bark"],
   ["测试 Bark", "Test Bark"],
   ["SSH 与调度", "SSH and Schedule"],
@@ -503,6 +527,8 @@ function translateMessage(message) {
     "Scan completed with no matching offers": "扫描完成，没有匹配报价",
     "SSH private key path is required before auto-create can verify login": "自动创建前必须填写 SSH 私钥路径用于验证登录",
     "SSH private key path or private key is required before auto-create can verify login": "自动创建前必须填写 SSH 私钥路径或私钥内容用于验证登录",
+    "Creating without SSH verification; if the machine cannot start or connect, charges may still accrue and the user accepts this risk": "已允许无 SSH 创建；如果机器无法正常启动或无法连接，平台可能仍会计费，风险由用户承担",
+    "SSH private key is not configured; skipped SSH recheck for unverified instances, and no-SSH created instances remain billable at the user's risk": "未配置 SSH 私钥，已跳过未验证实例的 SSH 复检；无 SSH 创建的实例将保留，计费风险由用户承担",
     "Managed instance limit reached, skipping create": "已达到托管实例数量上限，跳过创建",
     "Managed instance limit reached, stopping monitor": "已达到托管实例数量上限，停止监控",
     "Selected auto-create offer is no longer in scan results": "选中的自动创建 offer 已不在扫描结果中",
@@ -510,6 +536,9 @@ function translateMessage(message) {
     "Ready notification failed": "就绪通知发送失败",
     "Monitor scan failed": "监控扫描失败",
     "Error notification failed": "错误通知发送失败",
+    "Stock drop notification skipped; Bark URL is empty": "库存下降通知已跳过：Bark URL 为空",
+    "Stock drop notification sent": "库存下降通知已发送",
+    "Stock drop notification failed": "库存下降通知发送失败",
     "Vast GPU model lookup failed": "Vast GPU 型号查询失败",
     "HTTP request failed": "HTTP 请求失败",
     "A scan is already in progress": "已有扫描正在进行",
@@ -524,8 +553,10 @@ function translateMessage(message) {
   if (exact[text]) return exact[text];
   const patterns = [
     [/^Scan matched (\d+) candidate offers$/, "扫描命中 {1} 个候选机器"],
+    [/^(.+) stock dropped quickly: (\d+) -> (\d+), down (\d+) offers \(([\d.]+)%\)$/, "{1} 库存快速下降：{2} -> {3}，减少 {4} 台（{5}%）"],
     [/^Create failed for offer (\d+)$/, "offer {1} 创建失败"],
     [/^Instance (\d+) created; checking connection$/, "实例 {1} 已创建，正在检测 SSH"],
+    [/^Instance (\d+) was created without SSH verification; if it cannot start or connect, charges may still accrue and the user accepts this risk$/, "实例 {1} 已创建但未配置 SSH 验证；如果实例无法正常启动或无法连接，可能仍会计费，风险由用户承担"],
     [/^Connection test failed for instance (\d+); deleting instance$/, "实例 {1} SSH 检测失败，正在删除实例"],
     [/^Failed to delete instance (\d+) after connection failure$/, "实例 {1} 连接失败后删除失败"],
     [/^Instance (\d+) deleted after connection failure$/, "实例 {1} 连接失败后已删除"],
@@ -565,6 +596,8 @@ function translateChineseMessageToEnglish(text) {
     "扫描完成，没有匹配报价": "Scan completed with no matching offers",
     "自动创建前必须填写 SSH 私钥路径用于验证登录": "SSH private key path is required before auto-create can verify login",
     "自动创建前必须填写 SSH 私钥路径或私钥内容用于验证登录": "SSH private key path or private key is required before auto-create can verify login",
+    "已允许无 SSH 创建；如果机器无法正常启动或无法连接，平台可能仍会计费，风险由用户承担": "Creating without SSH verification; if the machine cannot start or connect, charges may still accrue and the user accepts this risk",
+    "未配置 SSH 私钥，已跳过未验证实例的 SSH 复检；无 SSH 创建的实例将保留，计费风险由用户承担": "SSH private key is not configured; skipped SSH recheck for unverified instances, and no-SSH created instances remain billable at the user's risk",
     "已达到托管实例数量上限，跳过创建": "Managed instance limit reached, skipping create",
     "已达到托管实例数量上限，停止监控": "Managed instance limit reached, stopping monitor",
     "选中的自动创建 offer 已不在扫描结果中": "Selected auto-create offer is no longer in scan results",
@@ -572,6 +605,9 @@ function translateChineseMessageToEnglish(text) {
     "就绪通知发送失败": "Ready notification failed",
     "监控扫描失败": "Monitor scan failed",
     "错误通知发送失败": "Error notification failed",
+    "库存下降通知已跳过：Bark URL 为空": "Stock drop notification skipped; Bark URL is empty",
+    "库存下降通知已发送": "Stock drop notification sent",
+    "库存下降通知发送失败": "Stock drop notification failed",
     "RunPod 平台适配器尚未实现": "RunPod provider is not implemented yet",
     "必须填写 SSH 私钥路径": "ssh private key path is required",
     "必须填写 SSH 私钥路径或私钥内容": "ssh private key path or private key is required",
@@ -579,8 +615,10 @@ function translateChineseMessageToEnglish(text) {
   if (exact[text]) return exact[text];
   const patterns = [
     [/^扫描命中 (\d+) 个候选机器$/, "Scan matched {1} candidate offers"],
+    [/^(.+) 库存快速下降：(\d+) -> (\d+)，减少 (\d+) 台（([\d.]+)%）$/, "{1} stock dropped quickly: {2} -> {3}, down {4} offers ({5}%)"],
     [/^offer (\d+) 创建失败$/, "Create failed for offer {1}"],
     [/^实例 (\d+) 已创建，正在检测 SSH$/, "Instance {1} created; checking connection"],
+    [/^实例 (\d+) 已创建但未配置 SSH 验证；如果实例无法正常启动或无法连接，可能仍会计费，风险由用户承担$/, "Instance {1} was created without SSH verification; if it cannot start or connect, charges may still accrue and the user accepts this risk"],
     [/^实例 (\d+) SSH 检测失败，正在删除实例$/, "Connection test failed for instance {1}; deleting instance"],
     [/^实例 (\d+) 连接失败后删除失败$/, "Failed to delete instance {1} after connection failure"],
     [/^实例 (\d+) 连接失败后已删除$/, "Instance {1} deleted after connection failure"],
@@ -671,12 +709,36 @@ function migrateConfig(config) {
     migrated.connection.ssh_private_key = "";
   }
 
+  if (!migrated.create || typeof migrated.create !== "object") {
+    throw new Error("Invalid config payload: create is missing");
+  }
+  if (!("allow_create_without_ssh_key" in migrated.create)) {
+    migrated.create.allow_create_without_ssh_key = false;
+  }
+
   if (!("ui" in migrated)) {
     migrated.ui = { language: "zh" };
   } else if (!migrated.ui || typeof migrated.ui !== "object") {
     throw new Error("Invalid config payload: ui must be an object");
   } else if (!("language" in migrated.ui)) {
     migrated.ui.language = "zh";
+  }
+
+  if (!migrated.monitor || typeof migrated.monitor !== "object") {
+    throw new Error("Invalid config payload: monitor is missing");
+  }
+  const monitorDefaults = {
+    stock_alert_enabled: false,
+    stock_alert_window_minutes: 60,
+    stock_alert_min_baseline_count: 5,
+    stock_alert_drop_count: 5,
+    stock_alert_drop_percent: 30.0,
+    stock_alert_cooldown_minutes: 60,
+  };
+  for (const [key, value] of Object.entries(monitorDefaults)) {
+    if (!(key in migrated.monitor)) {
+      migrated.monitor[key] = value;
+    }
   }
 
   return migrated;
@@ -839,6 +901,11 @@ async function deleteSelectedInstances() {
   showToast(t("deleteSubmitted", { count }));
   await refreshState();
   await refreshInstances(true);
+}
+
+async function clearEvents() {
+  await api("/api/events/clear", { method: "POST" });
+  await refreshState();
 }
 
 async function refreshTemplates(keyword = "") {
@@ -1190,6 +1257,7 @@ function createdStatusLabel(check, cleanup) {
   if (cleanup.status === "delete_failed") return t("deleteFailed");
   if (cleanup.status === "deleting") return t("deleting");
   if (cleanup.status === "checking") return t("sshChecking");
+  if (cleanup.status === "kept_unverified") return t("unverifiedKept");
   if (check.ok) return t("connectionPassed");
   return t("connectionChecking");
 }
@@ -1199,12 +1267,14 @@ function createdStatusClass(check, cleanup) {
   if (cleanup.status === "delete_failed") return "bad";
   if (cleanup.status === "deleting") return "pending";
   if (cleanup.status === "checking") return "pending";
+  if (cleanup.status === "kept_unverified") return "pending";
   return check.ok ? "ok" : "pending";
 }
 
 function cleanupLabel(status) {
   const labels = {
     kept: t("kept"),
+    kept_unverified: t("unverifiedKept"),
     checking: t("checking"),
     deleting: t("deleting"),
     deleted: t("deleted"),
@@ -1325,6 +1395,7 @@ function renderTasks() {
         ${taskMetric(t("taskPrice"), summarizePrice(config))}
         ${taskMetric(t("taskCreateLimit"), summarizeCreateLimit(config))}
         ${taskMetric(t("taskInterval"), summarizeScanInterval(config))}
+        ${taskMetric(t("taskStockAlert"), summarizeStockAlert(config))}
         ${taskMetric(t("taskUpdatedAt"), formatMaybeDate(task.updated_at))}
       </div>
     `;
@@ -1352,6 +1423,7 @@ function renderActiveTaskFromState(state) {
       ${taskMetric(t("taskGpu"), summarizeGpuNames(config))}
       ${taskMetric(t("taskPrice"), summarizePrice(config))}
       ${taskMetric(t("taskAutoCreate"), config.create && config.create.auto_create_enabled ? t("enabled") : t("disabled"))}
+      ${taskMetric(t("taskStockAlert"), summarizeStockAlert(config))}
       ${taskMetric(t("taskLastScan"), formatMaybeDate(activeTask.last_scan_at))}
       ${taskMetric(t("taskNextScan"), formatMaybeDate(activeTask.next_scan_at))}
     </div>
@@ -1453,6 +1525,11 @@ function summarizeCreateLimit(config) {
 function summarizeScanInterval(config) {
   if (!config.monitor) return "-";
   return `${config.monitor.scan_interval_seconds}s`;
+}
+
+function summarizeStockAlert(config) {
+  if (!config.monitor || !config.monitor.stock_alert_enabled) return t("disabled");
+  return `${config.monitor.stock_alert_drop_count}/${number(config.monitor.stock_alert_drop_percent, 1)}%`;
 }
 
 function formatMaybeDate(seconds) {
@@ -1602,6 +1679,7 @@ buttons.bark.addEventListener("click", () => runAction(t("barkSent"), async () =
 buttons.refreshInstances.addEventListener("click", () => runAction(t("instancesRefreshed"), () => refreshInstances(true)));
 buttons.cleanupInstances.addEventListener("click", () => runAction(t("errorInstancesCleaned"), cleanupInstances));
 buttons.deleteInstances.addEventListener("click", () => runAction(t("selectedInstancesDeleted"), deleteSelectedInstances));
+buttons.clearEvents.addEventListener("click", () => runAction(t("eventsCleared"), clearEvents));
 buttons.templateSearch.addEventListener("click", () => refreshTemplates(templateSearchInput.value.trim()));
 buttons.templatePopular.addEventListener("click", () => {
   templateSearchInput.value = "";

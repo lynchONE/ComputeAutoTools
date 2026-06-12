@@ -89,6 +89,11 @@ class StateStore:
             self._persist_events_locked()
         return event
 
+    def clear_events(self) -> None:
+        with self._lock:
+            self._state.events = []
+            self._persist_events_locked()
+
     def set_recent_offers(self, offers: list[dict[str, Any]]) -> None:
         with self._lock:
             self._state.recent_offers = offers

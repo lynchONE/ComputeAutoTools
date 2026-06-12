@@ -9,3 +9,4 @@ data/config.json
 data/events.json
 data/state.json
 data/tasks.json
+data/stock_alerts.json

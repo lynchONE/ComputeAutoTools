@@ -9,6 +9,7 @@ from vast_autotools.monitor import _instance_has_error, _is_managed_instance
 from vast_autotools.platforms import PlatformNotSupported, build_adapter, platform_gpu_models
 from vast_autotools.runpod_adapter import RunPodAdapter, _normalize_pod
 from vast_autotools.state import StateStore
+from vast_autotools.stock_alerts import StockAlertStore
 from vast_autotools.tasks import TaskStore
 from vast_autotools.vast_adapter import (
     CreateResult,
@@ -69,6 +70,28 @@ class ConfigTests(unittest.TestCase):
         raw["create"]["target_offer_ids"] = [123, 456]
         parsed = config_from_dict(raw)
         self.assertEqual(parsed.create.target_offer_ids, [123, 456])
+
+    def test_allow_create_without_ssh_key_round_trip(self):
+        raw = config_to_dict(default_config())
+        raw["create"]["allow_create_without_ssh_key"] = True
+        parsed = config_from_dict(raw)
+        self.assertTrue(parsed.create.allow_create_without_ssh_key)
+
+    def test_stock_alert_config_round_trip(self):
+        raw = config_to_dict(default_config())
+        raw["monitor"]["stock_alert_enabled"] = True
+        raw["monitor"]["stock_alert_window_minutes"] = 30
+        raw["monitor"]["stock_alert_min_baseline_count"] = 8
+        raw["monitor"]["stock_alert_drop_count"] = 4
+        raw["monitor"]["stock_alert_drop_percent"] = 25.5
+        raw["monitor"]["stock_alert_cooldown_minutes"] = 45
+        parsed = config_from_dict(raw)
+        self.assertTrue(parsed.monitor.stock_alert_enabled)
+        self.assertEqual(parsed.monitor.stock_alert_window_minutes, 30)
+        self.assertEqual(parsed.monitor.stock_alert_min_baseline_count, 8)
+        self.assertEqual(parsed.monitor.stock_alert_drop_count, 4)
+        self.assertEqual(parsed.monitor.stock_alert_drop_percent, 25.5)
+        self.assertEqual(parsed.monitor.stock_alert_cooldown_minutes, 45)
 
     def test_builds_runpod_adapter(self):
         raw = config_to_dict(default_config())
@@ -154,6 +177,22 @@ class TaskStoreTests(unittest.TestCase):
             deleted = store.delete_task("task_a")
             self.assertEqual(deleted.id, "task_a")
             self.assertEqual(store.list_tasks(), [])
+
+
+class StateStoreTests(unittest.TestCase):
+    def test_clear_events_removes_memory_and_persisted_logs(self):
+        with TemporaryDirectory() as tempdir:
+            events_path = Path(tempdir) / "events.json"
+            state = StateStore(events_path)
+            state.add_event("info", "one")
+            state.add_event("warn", "two")
+            self.assertEqual(len(state.snapshot().events), 2)
+
+            state.clear_events()
+
+            self.assertEqual(state.snapshot().events, [])
+            reloaded = StateStore(events_path)
+            self.assertEqual(reloaded.snapshot().events, [])
 
 
 class MonitorTests(unittest.TestCase):
@@ -254,6 +293,110 @@ class MonitorTests(unittest.TestCase):
         self.assertTrue(result["ssh_key_missing"])
         self.assertEqual(sequence, [])
 
+    def test_auto_create_without_ssh_key_when_risk_is_accepted(self):
+        sequence = []
+        offers = [_offer(1)]
+
+        class FakeAdapter:
+            def __init__(self, config):
+                self.config = config
+
+            def search(self):
+                return offers
+
+            def list_instances(self):
+                return []
+
+            def create_instance(self, offer):
+                instance_id = 1000 + offer.id
+                sequence.append(("create", instance_id))
+                return CreateResult(offer=offer, response={"success": True}, instance_id=instance_id, label="test")
+
+            def wait_for_connection(self, instance_id):
+                sequence.append(("wait", instance_id))
+                raise AssertionError("SSH verification should be skipped")
+
+            def destroy_instance(self, instance_id):
+                sequence.append(("destroy", instance_id))
+                raise AssertionError("unverified instance should be retained")
+
+        config = _auto_create_config(max_created_instances=1, max_creates_per_cycle=1)
+        config.create.allow_create_without_ssh_key = True
+        result = _scan_with_fakes(config, FakeAdapter, _FakeNotifier(sequence))
+
+        self.assertTrue(result["ssh_verification_skipped"])
+        self.assertNotIn("ssh_key_missing", result)
+        self.assertEqual(sequence, [("create", 1001)])
+        self.assertEqual(result["created_total"], 1)
+        self.assertTrue(result["capacity_reached"])
+        created = result["created"][0]
+        self.assertEqual(created["connection_check"]["mode"], "none")
+        self.assertEqual(created["cleanup"]["status"], "kept_unverified")
+        self.assertIn("billing risk accepted", created["cleanup"]["detail"])
+
+    def test_stock_drop_alert_sends_notification_once_per_cooldown(self):
+        sequence = []
+
+        class FakeAdapter:
+            counts = [10, 4, 3]
+
+            def __init__(self, config):
+                self.config = config
+
+            def search(self):
+                count = self.counts.pop(0)
+                return [_offer(offer_id) for offer_id in range(1, count + 1)]
+
+        notifier = _FakeNotifier(sequence)
+        config = default_config()
+        config.credentials.vast_api_key = "test-key"
+        config.search.gpu_names = ["RTX 4090"]
+        config.monitor.stock_alert_enabled = True
+        config.monitor.stock_alert_window_minutes = 60
+        config.monitor.stock_alert_min_baseline_count = 5
+        config.monitor.stock_alert_drop_count = 5
+        config.monitor.stock_alert_drop_percent = 30.0
+        config.monitor.stock_alert_cooldown_minutes = 60
+
+        with TemporaryDirectory() as tempdir:
+            state = StateStore(Path(tempdir) / "events.json")
+            service = MonitorService(state)
+            service._stock_alert_store = StockAlertStore(Path(tempdir) / "stock_alerts.json")
+            with (
+                patch("vast_autotools.monitor.build_adapter", side_effect=lambda current_config: FakeAdapter(current_config)),
+                patch("vast_autotools.monitor.build_notifier", return_value=notifier),
+            ):
+                first = service._scan_with_config(config, task_id="task-a")
+                second = service._scan_with_config(config, task_id="task-a")
+                third = service._scan_with_config(config, task_id="task-a")
+
+        self.assertEqual(first["stock_alert"]["reason"], "warming_up")
+        self.assertTrue(second["stock_alert"]["should_alert"])
+        self.assertEqual(second["stock_alert"]["baseline_count"], 10)
+        self.assertEqual(second["stock_alert"]["drop_count"], 6)
+        self.assertFalse(third["stock_alert"]["should_alert"])
+        self.assertEqual(third["stock_alert"]["reason"], "cooldown")
+        self.assertEqual(sequence, [("notify", "GPU 库存下降告警")])
+
+    def test_stock_alert_disabled_does_not_add_scan_result(self):
+        class FakeAdapter:
+            def __init__(self, config):
+                self.config = config
+
+            def search(self):
+                return [_offer(1)]
+
+        config = default_config()
+        config.credentials.vast_api_key = "test-key"
+        with TemporaryDirectory() as tempdir:
+            state = StateStore(Path(tempdir) / "events.json")
+            service = MonitorService(state)
+            service._stock_alert_store = StockAlertStore(Path(tempdir) / "stock_alerts.json")
+            with patch("vast_autotools.monitor.build_adapter", side_effect=lambda current_config: FakeAdapter(current_config)):
+                result = service._scan_with_config(config, task_id="task-a")
+
+        self.assertNotIn("stock_alert", result)
+
     def test_auto_create_accepts_inline_ssh_private_key(self):
         sequence = []
         offers = [_offer(1)]
@@ -324,6 +467,39 @@ class MonitorTests(unittest.TestCase):
             [item for item in sequence if item[0] == "notify"],
             [("notify", "Vast 实例 1001 已就绪"), ("notify", "Vast 实例 1002 已就绪")],
         )
+
+    def test_cleanup_errors_skips_ssh_recheck_without_private_key(self):
+        sequence = []
+        config = default_config()
+        config.credentials.vast_api_key = "test-key"
+        config.create.label_prefix = "vast-auto"
+
+        class FakeAdapter:
+            def __init__(self, config):
+                self.config = config
+
+            def list_instances(self):
+                return [{"id": 1001, "label": "vast-auto-1001", "actual_status": "running"}]
+
+            def wait_for_connection(self, instance_id):
+                sequence.append(("wait", instance_id))
+                raise AssertionError("SSH recheck should be skipped without a private key")
+
+            def destroy_instance(self, instance_id):
+                sequence.append(("destroy", instance_id))
+                raise AssertionError("running unverified instance should be retained")
+
+        with TemporaryDirectory() as tempdir:
+            state = StateStore(Path(tempdir) / "events.json")
+            service = MonitorService(state)
+            with (
+                patch("vast_autotools.monitor.load_config", return_value=config),
+                patch("vast_autotools.monitor.build_adapter", side_effect=lambda current_config: FakeAdapter(current_config)),
+            ):
+                cleaned = service.cleanup_failed_managed_instances()
+
+        self.assertEqual(cleaned, [])
+        self.assertEqual(sequence, [])
 
     def test_manual_delete_instances_records_attempt_and_result(self):
         sequence = []

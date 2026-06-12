@@ -68,6 +68,7 @@ class SearchConfig:
 @dataclass
 class CreateConfig:
     auto_create_enabled: bool = False
+    allow_create_without_ssh_key: bool = False
     target_offer_ids: list[int] = field(default_factory=list)
     max_created_instances: int = 1
     max_creates_per_cycle: int = 1
@@ -101,6 +102,12 @@ class MonitorConfig:
     scan_interval_seconds: int = 60
     notify_on_error: bool = True
     stop_after_first_success: bool = False
+    stock_alert_enabled: bool = False
+    stock_alert_window_minutes: int = 60
+    stock_alert_min_baseline_count: int = 5
+    stock_alert_drop_count: int = 5
+    stock_alert_drop_percent: float = 30.0
+    stock_alert_cooldown_minutes: int = 60
 
 
 @dataclass
@@ -203,6 +210,11 @@ def validate_config(config: AppConfig) -> None:
         raise ConfigError("connection.ssh_command is required in ssh test mode")
 
     _require_int("monitor.scan_interval_seconds", monitor.scan_interval_seconds, minimum=15)
+    _require_int("monitor.stock_alert_window_minutes", monitor.stock_alert_window_minutes, minimum=1)
+    _require_int("monitor.stock_alert_min_baseline_count", monitor.stock_alert_min_baseline_count, minimum=1)
+    _require_int("monitor.stock_alert_drop_count", monitor.stock_alert_drop_count, minimum=1)
+    _require_float("monitor.stock_alert_drop_percent", monitor.stock_alert_drop_percent, minimum=0.0, maximum=100.0)
+    _require_int("monitor.stock_alert_cooldown_minutes", monitor.stock_alert_cooldown_minutes, minimum=1)
 
     for key, value in create.env_vars.items():
         if not isinstance(key, str) or not isinstance(value, str):

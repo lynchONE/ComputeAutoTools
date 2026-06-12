@@ -10,6 +10,7 @@ from .config import AppConfig, ConfigPath, config_from_dict, config_to_dict, loa
 from .notifier import BarkMessage, build_notifier
 from .platforms import PlatformAdapter, build_adapter, ensure_provider_supported
 from .state import StateStore
+from .stock_alerts import StockAlertDecision, StockAlertStore
 from .tasks import TaskStore
 from .vast_adapter import CreateResult, OfferView, extract_ssh_target
 
@@ -21,6 +22,7 @@ class MonitorService:
         self._stop_event = threading.Event()
         self._thread: Optional[threading.Thread] = None
         self._task_store = TaskStore()
+        self._stock_alert_store = StockAlertStore()
 
     def start(self) -> None:
         config = load_config(ConfigPath)
@@ -103,7 +105,7 @@ class MonitorService:
 
     def scan_once(self) -> dict:
         config = load_config(ConfigPath)
-        return self._scan_with_config(config)
+        return self._scan_with_config(config, task_id="manual")
 
     def list_tasks(self) -> list[dict]:
         tasks = self._task_store.list_tasks()
@@ -164,7 +166,15 @@ class MonitorService:
         config = load_config(ConfigPath)
         adapter = build_adapter(config)
         cleaned = self._cleanup_failed_managed_instances(config, adapter)
-        cleaned.extend(self._recheck_unverified_managed_instances(config, adapter, _handled_instance_ids(cleaned)))
+        if _has_ssh_private_key(config):
+            cleaned.extend(self._recheck_unverified_managed_instances(config, adapter, _handled_instance_ids(cleaned)))
+        else:
+            self._event(
+                config,
+                "warn",
+                "未配置 SSH 私钥，已跳过未验证实例的 SSH 复检；无 SSH 创建的实例将保留，计费风险由用户承担",
+                "SSH private key is not configured; skipped SSH recheck for unverified instances, and no-SSH created instances remain billable at the user's risk",
+            )
         return cleaned
 
     def delete_instances(self, instance_ids: list[int | str]) -> list[dict]:
@@ -234,7 +244,7 @@ class MonitorService:
                     next_scan_at=started + config.monitor.scan_interval_seconds,
                 )
             try:
-                result = self._scan_with_config(config)
+                result = self._scan_with_config(config, task_id=task_id)
                 if task_id is not None:
                     after_scan = self._state.snapshot()
                     self._task_store.update_runtime(
@@ -268,7 +278,7 @@ class MonitorService:
             active_task_config=None,
         )
 
-    def _scan_with_config(self, config: AppConfig) -> dict:
+    def _scan_with_config(self, config: AppConfig, task_id: Optional[str] = None) -> dict:
         with self._lock:
             snapshot = self._state.snapshot()
             if snapshot.scan_in_progress:
@@ -289,6 +299,9 @@ class MonitorService:
                 "capacity_reached": False,
                 "managed_instances": None,
             }
+            stock_alert = self._check_stock_alert(config, task_id, len(offers))
+            if stock_alert is not None:
+                result["stock_alert"] = stock_alert.to_dict()
             if offers:
                 self._event(
                     config,
@@ -302,24 +315,35 @@ class MonitorService:
 
             if not config.create.auto_create_enabled:
                 return result
+            skip_ssh_verification = False
             if not _has_ssh_private_key(config):
-                result["ssh_key_missing"] = True
+                if not config.create.allow_create_without_ssh_key:
+                    result["ssh_key_missing"] = True
+                    self._event(
+                        config,
+                        "error",
+                        "自动创建前必须填写 SSH 私钥路径或私钥内容用于验证登录",
+                        "SSH private key path or private key is required before auto-create can verify login",
+                    )
+                    return result
+                skip_ssh_verification = True
+                result["ssh_verification_skipped"] = True
                 self._event(
                     config,
-                    "error",
-                    "自动创建前必须填写 SSH 私钥路径或私钥内容用于验证登录",
-                    "SSH private key path or private key is required before auto-create can verify login",
+                    "warn",
+                    "已允许无 SSH 创建；如果机器无法正常启动或无法连接，平台可能仍会计费，风险由用户承担",
+                    "Creating without SSH verification; if the machine cannot start or connect, charges may still accrue and the user accepts this risk",
                 )
-                return result
 
             result["cleaned_instances"] = self._cleanup_failed_managed_instances(config, adapter)
-            result["cleaned_instances"].extend(
-                self._recheck_unverified_managed_instances(
-                    config,
-                    adapter,
-                    _handled_instance_ids(result["cleaned_instances"]),
+            if not skip_ssh_verification:
+                result["cleaned_instances"].extend(
+                    self._recheck_unverified_managed_instances(
+                        config,
+                        adapter,
+                        _handled_instance_ids(result["cleaned_instances"]),
+                    )
                 )
-            )
             deleted_ids = _deleted_instance_ids(result["cleaned_instances"])
             managed_before = _active_managed_instance_count(
                 adapter.list_instances(),
@@ -370,13 +394,32 @@ class MonitorService:
                 created_item = _created_item(created)
                 created_item["connection_check"] = {
                     "ok": False,
-                    "mode": config.connection.ssh_test_mode,
-                    "detail": "created; waiting for connection check",
+                    "mode": "none" if skip_ssh_verification else config.connection.ssh_test_mode,
+                    "detail": (
+                        "created without SSH verification; billing risk accepted by user"
+                        if skip_ssh_verification
+                        else "created; waiting for connection check"
+                    ),
                 }
                 created_item["ssh"] = None
                 self._state.add_created_instance(created_item)
                 result["created"].append(created_item)
                 created_count += 1
+                if skip_ssh_verification:
+                    created_item["cleanup"] = {
+                        "status": "kept_unverified",
+                        "detail": "created without SSH verification; billing risk accepted by user",
+                    }
+                    self._state.update_created_instance(created.instance_id, created_item)
+                    retained_created_count += 1
+                    self._event(
+                        config,
+                        "warn",
+                        f"实例 {created.instance_id} 已创建但未配置 SSH 验证；如果实例无法正常启动或无法连接，可能仍会计费，风险由用户承担",
+                        f"Instance {created.instance_id} was created without SSH verification; if it cannot start or connect, charges may still accrue and the user accepts this risk",
+                        created_item,
+                    )
+                    continue
                 self._event(
                     config,
                     "success",
@@ -453,6 +496,58 @@ class MonitorService:
             return result
         finally:
             self._state.update(scan_in_progress=False)
+
+    def _check_stock_alert(self, config: AppConfig, task_id: Optional[str], matched_count: int) -> Optional[StockAlertDecision]:
+        if not config.monitor.stock_alert_enabled:
+            return None
+        decision = self._stock_alert_store.record_scan(config, task_id, matched_count)
+        if not decision.should_alert:
+            return decision
+        baseline_count = decision.baseline_count
+        if baseline_count is None:
+            raise RuntimeError("stock alert baseline is missing for triggered alert")
+        gpu_scope = _gpu_scope_label(config)
+        data = decision.to_dict()
+        data["gpu_scope"] = gpu_scope
+        self._event(
+            config,
+            "warn",
+            f"{gpu_scope} 库存快速下降：{baseline_count} -> {matched_count}，减少 {decision.drop_count} 台（{decision.drop_percent:.1f}%）",
+            f"{gpu_scope} stock dropped quickly: {baseline_count} -> {matched_count}, down {decision.drop_count} offers ({decision.drop_percent:.1f}%)",
+            data,
+        )
+        self._notify_stock_alert(config, gpu_scope, decision)
+        return decision
+
+    def _notify_stock_alert(self, config: AppConfig, gpu_scope: str, decision: StockAlertDecision) -> None:
+        notifier = build_notifier(
+            config.credentials.bark_url,
+            config.credentials.bark_group,
+            config.credentials.bark_sound,
+        )
+        if notifier is None:
+            self._event(
+                config,
+                "warn",
+                "库存下降通知已跳过：Bark URL 为空",
+                "Stock drop notification skipped; Bark URL is empty",
+                decision.to_dict(),
+            )
+            return
+        baseline_count = decision.baseline_count
+        if baseline_count is None:
+            raise RuntimeError("stock alert baseline is missing for notification")
+        title = _text(config, "GPU 库存下降告警", "GPU stock drop alert")
+        body = _text(
+            config,
+            f"{gpu_scope}: {baseline_count} -> {decision.current_count}，减少 {decision.drop_count} 台（{decision.drop_percent:.1f}%）。可能出现新的挖矿机会。",
+            f"{gpu_scope}: {baseline_count} -> {decision.current_count}, down {decision.drop_count} offers ({decision.drop_percent:.1f}%). Possible new mining opportunity.",
+        )
+        try:
+            notifier.send(BarkMessage(title=title, body=body))
+            self._event(config, "success", "库存下降通知已发送", "Stock drop notification sent", decision.to_dict())
+        except Exception as exc:
+            self._event(config, "warn", "库存下降通知发送失败", "Stock drop notification failed", {"error": str(exc), **decision.to_dict()})
 
     def _notify_ready(self, config: AppConfig, created: CreateResult, host: str, port: int) -> None:
         notifier = build_notifier(
@@ -706,6 +801,14 @@ def _provider_label(config: AppConfig) -> str:
     if config.platform.provider == "runpod":
         return "RunPod"
     return config.platform.provider
+
+
+def _gpu_scope_label(config: AppConfig) -> str:
+    provider = _provider_label(config)
+    gpu_names = ", ".join(config.search.gpu_names)
+    if gpu_names:
+        return f"{provider} {gpu_names}"
+    return f"{provider} all GPUs"
 
 
 def _created_item_from_instance(instance: dict, ssh_test_mode: str) -> dict:
