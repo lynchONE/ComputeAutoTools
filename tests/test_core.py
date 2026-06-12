@@ -674,6 +674,36 @@ class RunPodAdapterTests(unittest.TestCase):
         self.assertEqual(adapter._client.last_create["ports"], ["22/tcp"])
         self.assertNotIn("interruptible", adapter._client.last_create)
 
+    def test_create_instance_ignores_vast_template_hash_for_runpod(self):
+        config = default_config()
+        config.platform.provider = "runpod"
+        config.credentials.runpod_api_key = "runpod-key"
+        config.create.image = "runpod/pytorch"
+        config.create.template_hash = "fd2e982e3bc247fdb3eceb5aa1b9938f"
+        adapter = RunPodAdapter.__new__(RunPodAdapter)
+        adapter.config = config
+        adapter._client = _FakeRunPodClient(created_pod={"id": "podabc123", "name": "created"})
+        offer = OfferView(
+            123,
+            "RTX 4090",
+            1,
+            0.5,
+            82.6,
+            165.2,
+            1.0,
+            24.0,
+            "RunPod",
+            None,
+            None,
+            1.0,
+            {"gpu_type_id": "NVIDIA GeForce RTX 4090", "cloud_type": "SECURE", "price_per_gpu": 0.5, "stock_status": "High"},
+        )
+
+        adapter.create_instance(offer)
+
+        self.assertEqual(adapter._client.last_create["imageName"], "runpod/pytorch")
+        self.assertNotIn("templateId", adapter._client.last_create)
+
     def test_normalize_pod_exposes_common_instance_fields(self):
         normalized = _normalize_pod(
             {

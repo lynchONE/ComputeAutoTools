@@ -104,7 +104,12 @@ class RunPodAdapter:
         image = create.image.strip()
         template_id = create.template_hash.strip()
         if template_id:
-            payload["templateId"] = template_id
+            if _looks_like_vast_template_hash(template_id):
+                if not image:
+                    raise ConfigError("RunPod templateId looks like a Vast template_hash; clear it or select a RunPod template")
+                payload["imageName"] = image
+            else:
+                payload["templateId"] = template_id
         elif image:
             payload["imageName"] = image
         else:
@@ -636,6 +641,11 @@ def _max_stock_count(row: dict[str, Any]) -> Optional[int]:
 
 def _format_cuda_version(value: float) -> str:
     return f"{value:.1f}"
+
+
+def _looks_like_vast_template_hash(value: str) -> bool:
+    text = value.strip()
+    return len(text) == 32 and all(character in "0123456789abcdefABCDEF" for character in text)
 
 
 def _split_command(value: str) -> list[str]:

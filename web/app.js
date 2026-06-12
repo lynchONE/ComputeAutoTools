@@ -61,6 +61,7 @@ let lastInstances = [];
 let lastGpuPayload = null;
 let tasks = [];
 let selectedTaskId = null;
+let lastProviderValue = "";
 
 const jsonFields = new Set(["create.env_vars"]);
 const maxVisibleOffers = 6;
@@ -760,6 +761,7 @@ function setByPath(object, path, value) {
 function loadForm(config) {
   const migrated = migrateConfig(config);
   currentConfig = migrated;
+  lastProviderValue = migrated.platform.provider;
   applyLanguage(migrated.ui.language);
   selectedGpuNames = Array.isArray(migrated.search.gpu_names) ? normalizeGpuNames(migrated.search.gpu_names) : [];
   selectedOfferIds = Array.isArray(migrated.create.target_offer_ids) ? [...migrated.create.target_offer_ids] : [];
@@ -1692,6 +1694,13 @@ form.addEventListener("input", () => {
   setConfigDirty(true);
   const provider = form.elements["platform.provider"];
   if (provider && provider === document.activeElement) {
+    const nextProvider = provider.value;
+    if (lastProviderValue && nextProvider !== lastProviderValue) {
+      selectedOfferIds = [];
+      const hashInput = form.elements["create.template_hash"];
+      if (hashInput) hashInput.value = "";
+      lastProviderValue = nextProvider;
+    }
     gpuModels = [];
     lastTemplates = [];
     templatesLoaded = false;
